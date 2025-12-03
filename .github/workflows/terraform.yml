@@ -1,0 +1,91 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - 'envs/**'
+      - 'modules/**'
+  push:
+    branches:
+      - main
+
+jobs:
+  fmt:
+    name: fmt & init
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      - name: terraform fmt
+        run: terraform -chdir=envs/dev fmt -check
+
+  validate:
+    needs: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      - name: Initialize
+        run: terraform -chdir=envs/dev init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" -backend-config="dynamodb_table=${{ secrets.TF_STATE_DDB }}" -backend-config="region=${{ env.AWS_REGION }}"
+        env:
+          AWS_REGION: us-east-1
+      - name: terraform validate
+        run: terraform -chdir=envs/dev validate
+      - name: Run tflint
+        uses: terraform-linters/setup-tflint@v1
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1
+        with:
+          input: envs/dev
+
+  plan:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      - name: Terraform Init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CI_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        run: |
+          terraform -chdir=envs/dev init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" -backend-config="dynamodb_table=${{ secrets.TF_STATE_DDB }}" -backend-config="region=us-east-1"
+      - name: Terraform Plan
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CI_AWS_SECRET_ACCESS_KEY }}
+        run: terraform -chdir=envs/dev plan -out plan.tfplan
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: ${{ steps.output.outputs.url || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      - name: Terraform Init
+        env:
+          AWS_REGION: us-east-1
+        run: terraform -chdir=envs/prod init -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" -backend-config="dynamodb_table=${{ secrets.TF_STATE_DDB }}" -backend-config="region=us-east-1"
+      - name: Terraform Apply
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CI_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CI_AWS_SECRET_ACCESS_KEY }}
+        run: terraform -chdir=envs/prod apply -auto-approve

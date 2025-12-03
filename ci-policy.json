@@ -1,0 +1,8 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["ec2:*","elasticloadbalancing:*","autoscaling:*","iam:PassRole","iam:GetRole","iam:CreateRole","iam:AttachRolePolicy"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["s3:*"], "Resource": ["arn:aws:s3:::my-terraform-state-bucket*"] },
+    { "Effect": "Allow", "Action": ["dynamodb:*"], "Resource": ["arn:aws:dynamodb:us-east-1:123456789012:table/terraform-state-lock"] }
+  ]
+}

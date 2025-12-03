@@ -1,0 +1,23 @@
+flowchart LR
+  %% 1. Define all nodes inside subgraphs first
+  subgraph AWS
+    VPC[VPC]
+    subgraph Public
+      ALB(Application LB)
+    end
+    subgraph Private
+      AutoScaling_Group --> EC2_Instances(Nginx)
+    end
+    S3[S3: Terraform State]
+    DDB[DynamoDB: Lock Table]
+  end
+  
+  %% Define external actor outside the AWS subgraph
+  DevOps[Developer / CI]
+
+  %% 2. Define all connections *after* subgraphs are closed
+  DevOps -->|ci runs terraform state op| S3
+  DevOps -->|uses lock| DDB
+  DevOps -->|1. plan 2. apply| AWS
+  
+  ALB --> ASG
